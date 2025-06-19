@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Pen Real-Time Data</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 10px;
+        }
+        .status.connected { background: #4CAF50; }
+        .status.disconnected { background: #f44336; }
+        .devices {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .device-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .device-name {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .battery {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        .sensor-data {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .sensor-group {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .sensor-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            opacity: 0.8;
+        }
+        .sensor-value {
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 16px;
+            margin: 5px 0;
+        }
+        .chart-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-top: 20px;
+        }
+        .chart {
+            width: 100%;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        .wave {
+            position: absolute;
+            bottom: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: #4CAF50;
+            transform-origin: left center;
+        }
+        .log {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+        }
+        .tremor-indicator {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .tremor-detected { background: #ff9800; color: black; }
+        .tremor-normal { background: #4CAF50; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🦡 Smart Pen Real-Time Monitoring</h1>
+            <div id="connectionStatus" class="status disconnected">Connecting...</div>
+            <div id="dataCount" class="status connected">0 readings</div>
+        </div>
+
+        <div id="devices" class="devices">
+            <!-- Devices will be populated here -->
+        </div>
+
+        <div class="chart-container">
+            <h3>Real-Time Tremor Analysis</h3>
+            <div class="chart" id="tremorChart">
+                <div class="wave" id="tremorWave"></div>
+            </div>
+        </div>
+
+        <div class="log" id="dataLog">
+            <div>📡 Connecting to Smart Pen backend...</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://192.168.2.13:3005';
+        let devices = {};
+        let dataCount = 0;
+        let tremorData = [];
+
+        // DOM elements
+        const connectionStatus = document.getElementById('connectionStatus');
+        const dataCountEl = document.getElementById('dataCount');
+        const devicesContainer = document.getElementById('devices');
+        const dataLog = document.getElementById('dataLog');
+        const tremorWave = document.getElementById('tremorWave');
+
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            connectionStatus.className = `status ${connected ? 'connected' : 'disconnected'}`;
+            connectionStatus.textContent = connected ? '🟢 Connected' : '🔴 Disconnected';
+        }
+
+        // Add log entry
+        function addLog(message) {
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `[${time}] ${message}`;
+            dataLog.appendChild(logEntry);
+            dataLog.scrollTop = dataLog.scrollHeight;
+            
+            // Keep only last 50 entries
+            while (dataLog.children.length > 50) {
+                dataLog.removeChild(dataLog.firstChild);
+            }
+        }
+
+        // Update device display
+        function updateDevice(deviceData) {
+            const deviceId = deviceData.deviceId || deviceData.serialNumber;
+            
+            if (!devices[deviceId]) {
+                devices[deviceId] = {
+                    element: createDeviceCard(deviceId),
+                    lastUpdate: Date.now()
+                };
+                devicesContainer.appendChild(devices[deviceId].element);
+            }
+
+            const device = devices[deviceId];
+            device.lastUpdate = Date.now();
+            
+            // Update device card with latest data
+            updateDeviceCard(device.element, deviceData);
+        }
+
+        // Create device card
+        function createDeviceCard(deviceId) {
+            const card = document.createElement('div');
+            card.className = 'device-card';
+            card.innerHTML = `
+                <div class="device-header">
+                    <div class="device-name">${deviceId}</div>
+                    <div class="battery">🔋 --% 📶 --</div>
+                </div>
+                <div class="sensor-data">
+                    <div class="sensor-group">
+                        <div class="sensor-title">Gyroscope (°/s)</div>
+                        <div class="sensor-value">X: <span id="${deviceId}-gyro-x">--</span></div>
+                        <div class="sensor-value">Y: <span id="${deviceId}-gyro-y">--</span></div>
+                        <div class="sensor-value">Z: <span id="${deviceId}-gyro-z">--</span></div>
+                    </div>
+                    <div class="sensor-group">
+                        <div class="sensor-title">Accelerometer (m/s²)</div>
+                        <div class="sensor-value">X: <span id="${deviceId}-accel-x">--</span></div>
+                        <div class="sensor-value">Y: <span id="${deviceId}-accel-y">--</span></div>
+                        <div class="sensor-value">Z: <span id="${deviceId}-accel-z">--</span></div>
+                    </div>
+                </div>
+            `;
+            return card;
+        }
+
+        // Update device card with sensor data
+        function updateDeviceCard(element, data) {
+            const deviceId = data.deviceId || data.serialNumber;
+            
+            // Update sensor values
+            const setValue = (id, value) => {
+                const el = document.getElementById(`${deviceId}-${id}`);
+                if (el) el.textContent = typeof value === 'number' ? value.toFixed(3) : '--';
+            };
+
+            setValue('gyro-x', data.gyro_x);
+            setValue('gyro-y', data.gyro_y);
+            setValue('gyro-z', data.gyro_z);
+            setValue('accel-x', data.accel_x);
+            setValue('accel-y', data.accel_y);
+            setValue('accel-z', data.accel_z);
+
+            // Detect tremor
+            if (data.gyro_x !== undefined && data.gyro_y !== undefined) {
+                const gyroMagnitude = Math.sqrt(data.gyro_x * data.gyro_x + data.gyro_y * data.gyro_y + data.gyro_z * data.gyro_z);
+                const isTremor = gyroMagnitude > 0.5; // Simple tremor detection
+
+                // Update tremor indicator
+                let indicator = element.querySelector('.tremor-indicator');
+                if (!indicator) {
+                    indicator = document.createElement('span');
+                    indicator.className = 'tremor-indicator';
+                    element.querySelector('.device-header').appendChild(indicator);
+                }
+                
+                indicator.className = `tremor-indicator ${isTremor ? 'tremor-detected' : 'tremor-normal'}`;
+                indicator.textContent = isTremor ? '⚠️ Tremor' : '✅ Normal';
+
+                // Update tremor visualization
+                updateTremorVisualization(gyroMagnitude);
+            }
+        }
+
+        // Update tremor visualization
+        function updateTremorVisualization(magnitude) {
+            tremorData.push(magnitude);
+            if (tremorData.length > 100) tremorData.shift();
+
+            const intensity = Math.min(magnitude * 50, 100);
+            tremorWave.style.height = `${intensity}px`;
+            tremorWave.style.background = intensity > 25 ? '#ff9800' : '#4CAF50';
+        }
+
+        // Load devices
+        async function loadDevices() {
+            try {
+                const response = await fetch(`${API_BASE}/api/devices`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    data.data.devices.forEach(device => {
+                        updateDevice(device);
+                    });
+                    addLog(`📱 Loaded ${data.data.devices.length} devices`);
+                }
+            } catch (error) {
+                addLog(`❌ Error loading devices: ${error.message}`);
+            }
+        }
+
+        // Connect to real-time stream
+        function connectRealTimeStream() {
+            const eventSource = new EventSource(`${API_BASE}/api/stream/mpu6050/ESP32_SmartPen_Simulator`);
+            
+            eventSource.onopen = () => {
+                updateConnectionStatus(true);
+                addLog('📡 Connected to real-time stream');
+            };
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'sensor_data') {
+                        dataCount++;
+                        dataCountEl.textContent = `${dataCount} readings`;
+                        updateDevice(data.data);
+                        
+                        if (dataCount % 10 === 0) {
+                            addLog(`📊 Received ${dataCount} sensor readings`);
+                        }
+                    } else if (data.type === 'heartbeat') {
+                        addLog(`💓 Heartbeat - ${data.recentDataCount} recent readings`);
+                    }
+                } catch (error) {
+                    addLog(`❌ Error parsing data: ${error.message}`);
+                }
+            };
+
+            eventSource.onerror = () => {
+                updateConnectionStatus(false);
+                addLog('❌ Connection lost, retrying...');
+                setTimeout(() => connectRealTimeStream(), 5000);
+            };
+        }
+
+        // Initialize
+        addLog('🚀 Starting Smart Pen monitor...');
+        loadDevices();
+        connectRealTimeStream();
+
+        // Refresh devices every 30 seconds
+        setInterval(loadDevices, 30000);
+    </script>
+</body>
+</html> 

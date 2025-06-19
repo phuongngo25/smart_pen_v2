@@ -1,0 +1,17 @@
+🌐 Laptop IP Address: 192.168.61.204:3005
+📡 ESP32 WiFi devices should send data to: http://192.168.61.204:3005/api/mpu6050/readings
+🦡 Starting Enhanced Smart Pen Server with Parkinson's Detection...
+🦡 Enhanced Smart Pen Server running on:
+   Local:    http://localhost:3005
+   Network:  http://192.168.61.204:3005
+   ESP32 should connect to: 192.168.61.204:3005
+📊 Real-time MPU6050 data monitoring active
+🔍 Parkinson's detection algorithms enabled
+🌐 WebSocket connections ready for real-time updates
+
+🔥 FIREWALL REMINDER:
+   Make sure port 3005 is open in your firewall
+   ESP32 and laptop must be on same WiFi network
+🔍 [DEBUG] Device API request from user role: PATIENT, email: 
+🤒 [DEBUG] Patient access: showing 0 personal devices
+📱 [DEBUG] Returning 0 devices for role PATIENT

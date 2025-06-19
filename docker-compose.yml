@@ -1,0 +1,148 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: smartpen_postgres
+    environment:
+      POSTGRES_USER: smartpen_user
+      POSTGRES_PASSWORD: smartpen_password
+      POSTGRES_DB: smartpen_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartpen_user -d smartpen_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: smartpen_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API with WebSocket Support
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.enhanced
+      target: development
+    container_name: smartpen_backend_websocket
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://smartpen_user:smartpen_password@postgres:5432/smartpen_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: your_super_secret_jwt_key_here
+      JWT_REFRESH_SECRET: your_super_secret_refresh_key_here
+      JWT_EXPIRES_IN: 1h
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3004
+      PORT: 3005
+      HOST: 0.0.0.0
+    ports:
+      - "3005:3005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # USB device access for ESP32 connections
+    privileged: true
+    devices:
+      - "/dev/cu.usbserial-0001:/dev/cu.usbserial-0001"
+      - "/dev/tty.usbserial-0001:/dev/tty.usbserial-0001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./backend/uploads:/app/uploads
+      - ./logs:/app/logs
+      # Mount dev directory for USB device access
+      - /dev:/dev:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend React App with WebSocket Support
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: smartpen_frontend_websocket
+    environment:
+      VITE_API_URL: http://localhost:3005/api
+      VITE_WS_URL: ws://localhost:3005
+    ports:
+      - "3004:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Reverse Proxy with WebSocket Support
+  nginx:
+    image: nginx:alpine
+    container_name: smartpen_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/simple.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # USB Device Simulator - DISABLED FOR REAL DEVICE TESTING
+  # usb-simulator:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.simulator
+  #   container_name: smartpen_usb_simulator
+  #   environment:
+      #     BACKEND_URL: http://backend:3005
+  #   depends_on:
+  #     backend:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+  #   network_mode: "service:backend"
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: smartpen_network
+    driver: bridge 
