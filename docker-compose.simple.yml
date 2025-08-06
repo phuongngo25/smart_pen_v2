@@ -1,0 +1,64 @@
+services:
+  # Enhanced Backend Server (Working Version)
+  backend:
+    image: node:18-alpine
+    container_name: smartpen_backend_simple
+    working_dir: /app
+    environment:
+      NODE_ENV: development
+      PORT: 3005
+      HOST: 0.0.0.0
+    ports:
+      - "3005:3005"
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+      - ./logs:/app/logs
+    command: >
+      sh -c "
+        apk add --no-cache curl &&
+        npm install &&
+        node enhanced-simple-server.js
+      "
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend React App
+  frontend:
+    image: node:18-alpine
+    container_name: smartpen_frontend_simple
+    working_dir: /app
+    environment:
+      VITE_API_URL: http://localhost:3005/api
+      VITE_WS_URL: ws://localhost:3005
+    ports:
+      - "3004:3000"
+    volumes:
+      - ./frontend:/app
+    command: >
+      sh -c "
+        apk add --no-cache curl &&
+        npm install &&
+        npm run dev -- --host 0.0.0.0 --port 3000
+      "
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ESP32 Simulator - PERMANENTLY REMOVED TO PREVENT FAKE DATA
+  # No fake data generation allowed - only real ESP32 devices
+
+networks:
+  default:
+    name: smartpen_simple_network
+    driver: bridge 

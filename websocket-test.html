@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Pen WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .connected { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .disconnected { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .connecting { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+        
+        .input-group {
+            margin: 10px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 80px;
+            resize: vertical;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🦡 Smart Pen WebSocket Connection Test</h1>
+        
+        <div id="status" class="status disconnected">
+            DISCONNECTED - Not connected to WebSocket server
+        </div>
+        
+        <div class="input-group">
+            <label for="wsUrl">WebSocket Server URL:</label>
+            <input type="text" id="wsUrl" value="ws://localhost:3005/ws" />
+        </div>
+        
+        <div>
+            <button id="connectBtn" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            <button onclick="clearLog()">Clear Log</button>
+            <button onclick="testSensorData()">Send Test Sensor Data</button>
+        </div>
+        
+        <div class="input-group">
+            <label for="messageInput">Send Custom Message (JSON):</label>
+            <textarea id="messageInput" placeholder='{"type": "test", "message": "Hello WebSocket!"}'></textarea>
+            <button onclick="sendMessage()">Send Message</button>
+        </div>
+        
+        <div class="input-group">
+            <label>Message Log:</label>
+            <div id="log" class="log">
+                <div style="color: #666; font-style: italic;">Connection log will appear here...</div>
+            </div>
+        </div>
+        
+        <div class="input-group">
+            <h3>ESP32 Connection Instructions:</h3>
+            <div style="background: #e7f3ff; padding: 15px; border-radius: 6px; border: 1px solid #b8daff;">
+                <p><strong>WiFi Mode Configuration:</strong></p>
+                <ul>
+                    <li>Backend Server: <code>http://192.168.61.204:3005</code></li>
+                    <li>WebSocket Server: <code>ws://192.168.61.204:3005/ws</code></li>
+                    <li>Sensor Data Endpoint: <code>http://192.168.61.204:3005/api/mpu6050/readings</code></li>
+                </ul>
+                <p><strong>ESP32 Firmware:</strong> Use the provided <code>esp32_websocket_client.ino</code></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let messagesReceived = 0;
+        let messagesSent = 0;
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const colors = {
+                'info': '#333',
+                'success': '#28a745',
+                'error': '#dc3545',
+                'received': '#007bff',
+                'sent': '#6f42c1'
+            };
+            
+            logDiv.innerHTML += `<div style="color: ${colors[type] || '#333'}; margin: 2px 0;">
+                [${timestamp}] ${message}
+            </div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function updateStatus(status, className) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = status;
+            statusDiv.className = 'status ' + className;
+        }
+        
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Already connected!', 'warning');
+                return;
+            }
+            
+            try {
+                updateStatus('CONNECTING - Attempting to connect...', 'connecting');
+                log(`Connecting to ${url}...`, 'info');
+                
+                ws = new WebSocket(url);
+                
+                ws.onopen = function(event) {
+                    updateStatus('CONNECTED - WebSocket connection established', 'connected');
+                    log('✅ Connected successfully!', 'success');
+                    
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                    
+                    // Send identification message
+                    const identifyMsg = {
+                        type: 'client_identify',
+                        client_type: 'frontend',
+                        userId: 'test-user-' + Date.now()
+                    };
+                    sendJsonMessage(identifyMsg);
+                };
+                
+                ws.onmessage = function(event) {
+                    messagesReceived++;
+                    
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`📥 Received: ${JSON.stringify(data, null, 2)}`, 'received');
+                    } catch (e) {
+                        log(`📥 Received (raw): ${event.data}`, 'received');
+                    }
+                };
+                
+                ws.onclose = function(event) {
+                    updateStatus('DISCONNECTED - Connection closed', 'disconnected');
+                    log(`❌ Connection closed. Code: ${event.code}, Reason: ${event.reason}`, 'error');
+                    
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                };
+                
+                ws.onerror = function(error) {
+                    log(`💥 WebSocket error: ${error}`, 'error');
+                    updateStatus('ERROR - Connection failed', 'disconnected');
+                };
+                
+            } catch (error) {
+                log(`💥 Failed to create WebSocket: ${error.message}`, 'error');
+                updateStatus('ERROR - Failed to connect', 'disconnected');
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+        
+        function sendJsonMessage(obj) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = JSON.stringify(obj);
+                ws.send(message);
+                messagesSent++;
+                log(`📤 Sent: ${JSON.stringify(obj, null, 2)}`, 'sent');
+            } else {
+                log('❌ Cannot send message - not connected', 'error');
+            }
+        }
+        
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const messageText = input.value.trim();
+            
+            if (!messageText) {
+                log('❌ Please enter a message to send', 'warning');
+                return;
+            }
+            
+            try {
+                const messageObj = JSON.parse(messageText);
+                sendJsonMessage(messageObj);
+                input.value = '';
+            } catch (e) {
+                log(`❌ Invalid JSON: ${e.message}`, 'error');
+            }
+        }
+        
+        function testSensorData() {
+            const sampleData = {
+                type: 'sensor_data',
+                device_id: 'ESP32_TEST_' + Date.now(),
+                timestamp: Date.now(),
+                gyro: {
+                    x: (Math.random() - 0.5) * 500,
+                    y: (Math.random() - 0.5) * 500,
+                    z: (Math.random() - 0.5) * 500
+                },
+                accel: {
+                    x: (Math.random() - 0.5) * 20,
+                    y: (Math.random() - 0.5) * 20,
+                    z: 9.8 + (Math.random() - 0.5) * 4
+                },
+                temperature: 25 + (Math.random() - 0.5) * 10
+            };
+            sendJsonMessage(sampleData);
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '<div style="color: #666; font-style: italic;">Log cleared...</div>';
+        }
+        
+        log('🦡 Smart Pen WebSocket Test Interface Ready', 'info');
+        log('Click "Connect" to establish WebSocket connection', 'info');
+    </script>
+</body>
+</html> 

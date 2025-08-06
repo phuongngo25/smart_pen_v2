@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Visualization Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .status {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .canvas-container {
+            background-color: #111;
+            border: 2px solid #8B4513;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #8B4513;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #A0522D;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .info-panel {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        #canvas {
+            border: 1px solid #444;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 3D Tremor Visualization Test</h1>
+        
+        <div class="status">
+            <h3>System Status</h3>
+            <div id="status">Loading...</div>
+        </div>
+
+        <div class="controls">
+            <button id="playBtn">Play</button>
+            <button id="pauseBtn">Pause</button>
+            <button id="resetBtn">Reset</button>
+            <button id="captureBtn">Capture</button>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="canvas" width="800" height="500"></canvas>
+            <p><small>Click and drag to rotate • Scroll to zoom • Red=high magnitude, Green=low magnitude</small></p>
+        </div>
+
+        <div class="info">
+            <div class="info-panel">
+                <h4>Current Data</h4>
+                <div id="currentData">No data</div>
+            </div>
+            <div class="info-panel">
+                <h4>Statistics</h4>
+                <div id="stats">No data</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 3D Visualization Logic
+        class Simple3DVisualization {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.data = [];
+                this.isPlaying = false;
+                this.rotationX = 0;
+                this.rotationY = 0;
+                this.scale = 50;
+                this.showAxes = true;
+                this.trailLength = 100;
+                this.currentIndex = 0;
+                
+                this.setupMouseControls();
+            }
+
+            setupMouseControls() {
+                this.canvas.addEventListener('mousemove', (e) => {
+                    if (e.buttons === 1) {
+                        const deltaX = e.movementX * 0.01;
+                        const deltaY = e.movementY * 0.01;
+                        this.rotationY += deltaX;
+                        this.rotationX += deltaY;
+                        this.render();
+                    }
+                });
+
+                this.canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const delta = e.deltaY * -0.1;
+                    this.scale = Math.max(10, Math.min(200, this.scale + delta));
+                    this.render();
+                });
+            }
+
+            project3D(x, y, z) {
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+                const centerX = width / 2;
+                const centerY = height / 2;
+                
+                // Simple rotation around X and Y axes
+                const cosX = Math.cos(this.rotationX);
+                const sinX = Math.sin(this.rotationX);
+                const cosY = Math.cos(this.rotationY);
+                const sinY = Math.sin(this.rotationY);
+                
+                // Rotate around X axis
+                const y1 = y * cosX - z * sinX;
+                const z1 = y * sinX + z * cosX;
+                
+                // Rotate around Y axis
+                const x2 = x * cosY + z1 * sinY;
+                const z2 = -x * sinY + z1 * cosY;
+                
+                // Simple perspective projection
+                const perspective = 300;
+                const projectedX = centerX + (x2 * this.scale * perspective) / (perspective + z2);
+                const projectedY = centerY - (y1 * this.scale * perspective) / (perspective + z2);
+                
+                return { x: projectedX, y: projectedY, z: z2 };
+            }
+
+            render() {
+                const ctx = this.ctx;
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+
+                // Clear canvas
+                ctx.fillStyle = '#111111';
+                ctx.fillRect(0, 0, width, height);
+
+                // Draw axes
+                if (this.showAxes) {
+                    const axisLength = 2;
+                    
+                    // X axis (red)
+                    const xAxis = this.project3D(axisLength, 0, 0);
+                    const origin = this.project3D(0, 0, 0);
+                    ctx.strokeStyle = '#ff4444';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(origin.x, origin.y);
+                    ctx.lineTo(xAxis.x, xAxis.y);
+                    ctx.stroke();
+                    
+                    // Y axis (green)
+                    const yAxis = this.project3D(0, axisLength, 0);
+                    ctx.strokeStyle = '#44ff44';
+                    ctx.beginPath();
+                    ctx.moveTo(origin.x, origin.y);
+                    ctx.lineTo(yAxis.x, yAxis.y);
+                    ctx.stroke();
+                    
+                    // Z axis (blue)
+                    const zAxis = this.project3D(0, 0, axisLength);
+                    ctx.strokeStyle = '#4444ff';
+                    ctx.beginPath();
+                    ctx.moveTo(origin.x, origin.y);
+                    ctx.lineTo(zAxis.x, zAxis.y);
+                    ctx.stroke();
+                    
+                    // Axis labels
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '12px Arial';
+                    ctx.fillText('X', xAxis.x + 5, xAxis.y);
+                    ctx.fillText('Y', yAxis.x + 5, yAxis.y);
+                    ctx.fillText('Z', zAxis.x + 5, zAxis.y);
+                }
+
+                // Draw data points and trail
+                if (this.data.length > 0) {
+                    const displayData = this.data.slice(-this.trailLength);
+                    
+                    // Draw trail
+                    if (displayData.length > 1) {
+                        ctx.strokeStyle = '#00aaff';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        
+                        for (let i = 0; i < displayData.length - 1; i++) {
+                            const point1 = displayData[i];
+                            const point2 = displayData[i + 1];
+                            
+                            const proj1 = this.project3D(point1.x, point1.y, point1.z);
+                            const proj2 = this.project3D(point2.x, point2.y, point2.z);
+                            
+                            const alpha = (i / displayData.length) * 0.8 + 0.2;
+                            ctx.globalAlpha = alpha;
+                            
+                            if (i === 0) {
+                                ctx.moveTo(proj1.x, proj1.y);
+                            }
+                            ctx.lineTo(proj2.x, proj2.y);
+                        }
+                        ctx.stroke();
+                        ctx.globalAlpha = 1;
+                    }
+                    
+                    // Draw current point
+                    const currentPoint = displayData[displayData.length - 1];
+                    if (currentPoint) {
+                        const proj = this.project3D(currentPoint.x, currentPoint.y, currentPoint.z);
+                        
+                        // Color based on magnitude
+                        const intensity = Math.min(currentPoint.magnitude / 5, 1);
+                        const red = Math.floor(255 * intensity);
+                        const green = Math.floor(255 * (1 - intensity));
+                        
+                        ctx.fillStyle = `rgb(${red}, ${green}, 0)`;
+                        ctx.beginPath();
+                        ctx.arc(proj.x, proj.y, 5, 0, 2 * Math.PI);
+                        ctx.fill();
+                        
+                        // Draw magnitude indicator
+                        ctx.strokeStyle = ctx.fillStyle;
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.arc(proj.x, proj.y, currentPoint.magnitude * 10, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }
+                }
+
+                // Draw info text
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '14px Arial';
+                ctx.fillText(`Points: ${this.data.length}`, 10, 25);
+                ctx.fillText(`Rotation: X=${(this.rotationX * 180 / Math.PI).toFixed(0)}° Y=${(this.rotationY * 180 / Math.PI).toFixed(0)}°`, 10, 45);
+                ctx.fillText(`Scale: ${this.scale}x`, 10, 65);
+            }
+
+            updateData(newData) {
+                this.data = newData;
+                this.render();
+            }
+
+            play() {
+                this.isPlaying = true;
+                this.animate();
+            }
+
+            pause() {
+                this.isPlaying = false;
+            }
+
+            reset() {
+                this.rotationX = 0;
+                this.rotationY = 0;
+                this.scale = 50;
+                this.currentIndex = 0;
+                this.render();
+            }
+
+            animate() {
+                if (!this.isPlaying) return;
+                
+                this.render();
+                this.rotationY += 0.01; // Auto-rotate
+                
+                requestAnimationFrame(() => this.animate());
+            }
+
+            capture() {
+                return this.canvas.toDataURL('image/png');
+            }
+        }
+
+        // Initialize visualization
+        const canvas = document.getElementById('canvas');
+        const viz = new Simple3DVisualization(canvas);
+
+        // Control buttons
+        document.getElementById('playBtn').addEventListener('click', () => {
+            viz.play();
+            updateStatus('Playing visualization');
+        });
+
+        document.getElementById('pauseBtn').addEventListener('click', () => {
+            viz.pause();
+            updateStatus('Paused visualization');
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            viz.reset();
+            updateStatus('Reset visualization');
+        });
+
+        document.getElementById('captureBtn').addEventListener('click', () => {
+            const dataUrl = viz.capture();
+            const link = document.createElement('a');
+            link.download = `3d_visualization_${new Date().toISOString()}.png`;
+            link.href = dataUrl;
+            link.click();
+            updateStatus('Captured screenshot');
+        });
+
+        // Fetch data from backend
+        async function fetchData() {
+            try {
+                // Get sensor data and convert to 3D visualization format
+                const response = await fetch('http://localhost:3005/api/mpu6050/readings?limit=100');
+                const data = await response.json();
+                
+                if (data.data && data.data.length > 0) {
+                    const vizData = data.data.map(reading => ({
+                        timestamp: new Date(reading.timestamp).getTime(),
+                        x: reading.accel_x,
+                        y: reading.accel_y,
+                        z: reading.accel_z - 9.81, // Remove gravity
+                        magnitude: reading.magnitude
+                    }));
+                    
+                    viz.updateData(vizData);
+                    
+                    // Update info panels
+                    const latest = vizData[vizData.length - 1];
+                    document.getElementById('currentData').innerHTML = `
+                        <strong>Latest Reading:</strong><br>
+                        X: ${latest.x.toFixed(3)}<br>
+                        Y: ${latest.y.toFixed(3)}<br>
+                        Z: ${latest.z.toFixed(3)}<br>
+                        Magnitude: ${latest.magnitude.toFixed(3)}
+                    `;
+                    
+                    document.getElementById('stats').innerHTML = `
+                        <strong>Data Statistics:</strong><br>
+                        Total Points: ${vizData.length}<br>
+                        Avg Magnitude: ${(vizData.reduce((sum, p) => sum + p.magnitude, 0) / vizData.length).toFixed(3)}<br>
+                        Max Magnitude: ${Math.max(...vizData.map(p => p.magnitude)).toFixed(3)}
+                    `;
+                    
+                    updateStatus(`Loaded ${vizData.length} data points`);
+                } else {
+                    updateStatus('No data available');
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                updateStatus('Error fetching data: ' + error.message);
+            }
+        }
+
+        function updateStatus(message) {
+            document.getElementById('status').innerHTML = `
+                <strong>${new Date().toLocaleTimeString()}</strong>: ${message}
+            `;
+        }
+
+        // Initial load
+        updateStatus('Initializing 3D visualization...');
+        fetchData();
+
+        // Auto-refresh data every 2 seconds
+        setInterval(fetchData, 2000);
+
+        // Start playing by default
+        setTimeout(() => {
+            viz.play();
+            updateStatus('Auto-started visualization');
+        }, 1000);
+    </script>
+</body>
+</html> 
